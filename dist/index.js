@@ -1420,7 +1420,7 @@ function getSource(settings) {
             }
             // Fetch
             core.startGroup('Fetching the repository');
-            const fetchOptions = {};
+            const fetchOptions = { showProgress: settings.showProgress };
             if (settings.filter) {
                 fetchOptions.filter = settings.filter;
             }

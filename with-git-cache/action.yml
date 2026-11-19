@@ -1,0 +1,68 @@
+name: Checkout with Git object cache
+description: Checkout this repository and reuse Git objects cached on the runner.
+
+inputs:
+  ssh-key:
+    description: SSH key to use for checkout.
+  ref:
+    description: Branch, tag or SHA to checkout.
+  fetch-depth:
+    description: Number of commits to fetch. Use 0 for all history.
+    default: '1'
+  sparse-checkout:
+    description: Sparse checkout patterns, one per line.
+  sparse-checkout-cone-mode:
+    description: Use cone mode for sparse checkout.
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Configure Git object cache
+      id: git-object-cache
+      shell: bash
+      env:
+        USE_GIT_CACHE: ${{ env.CI_GIT_CHECKOUT_USE_CACHE != 'false' }}
+      run: |
+        cache=/opt/git-cache/mono-front.git
+        if [[ "$RUNNER_OS" == macOS ]]; then
+          cache="$HOME/Library/Caches/mono-front-git-cache/mono-front.git"
+        fi
+
+        if [[ "$USE_GIT_CACHE" != 'false' ]] &&
+          git --git-dir="$cache" cat-file -e 'refs/heads/master^{commit}' 2>/dev/null; then
+          printf 'objects=%s/objects\n' "$cache" >> "$GITHUB_OUTPUT"
+          echo "Using Git object cache at $cache"
+          exit 0
+        fi
+
+        git_dir="${GITHUB_WORKSPACE:?}/.git"
+        if grep -Fxq -- "$cache/objects" "$git_dir/objects/info/alternates" 2>/dev/null; then
+          # Local refs and objects may depend on the cache used by a previous checkout.
+          rm -rf -- "$git_dir"
+        fi
+        echo "Git object cache is disabled or unavailable; using ordinary checkout"
+
+    - name: Checkout
+      uses: $/
+      env:
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ${{ steps.git-object-cache.outputs.objects }}
+      with:
+        ssh-key: ${{ inputs.ssh-key }}
+        ref: ${{ inputs.ref }}
+        fetch-depth: ${{ inputs.fetch-depth }}
+        sparse-checkout: ${{ inputs.sparse-checkout }}
+        sparse-checkout-cone-mode: ${{ inputs.sparse-checkout-cone-mode }}
+        show-progress: ${{ env.CI_GIT_CHECKOUT_USE_PROGRESS_FORK != 'false' }}
+
+    - name: Retain Git object cache for later steps
+      if: steps.git-object-cache.outputs.objects != ''
+      shell: bash
+      env:
+        GIT_CACHE_OBJECTS: ${{ steps.git-object-cache.outputs.objects }}
+      run: |
+        alternates=$(git rev-parse --git-path objects/info/alternates)
+        mkdir -p "$(dirname "$alternates")"
+        if ! grep -Fxq -- "$GIT_CACHE_OBJECTS" "$alternates" 2>/dev/null; then
+          printf '%s\n' "$GIT_CACHE_OBJECTS" >> "$alternates"
+        fi

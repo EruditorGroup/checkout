@@ -161,7 +161,7 @@ export async function getSource(settings: IGitSourceSettings): Promise<void> {
       fetchDepth?: number
       fetchTags?: boolean
       showProgress?: boolean
-    } = {}
+    } = {showProgress: settings.showProgress}
 
     if (settings.filter) {
       fetchOptions.filter = settings.filter
